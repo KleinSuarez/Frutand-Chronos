@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import csv
 import io
+import re
 import calendar
 from html.parser import HTMLParser
 from typing import Dict, Any, List, Optional
@@ -233,11 +234,11 @@ class BiometricParser:
                 raise ValueError("No se pudieron parsear fechas/horas válidas en la columna 'Hora'.")
 
             df_valid['emp_id_clean'] = df_valid[col_id].astype(str).str.strip().str.replace("'", "")
-            df_valid['emp_nombre_clean'] = df_valid[col_nombre].astype(str).str.strip()
+            df_valid['emp_nombre_clean'] = df_valid[col_nombre].astype(str).apply(lambda x: re.sub(r'\s+', ' ', str(x)).strip())
             
             if col_area and col_area in df_valid.columns:
-                df_valid['emp_area_clean'] = df_valid[col_area].astype(str).str.strip().apply(
-                    lambda x: x.split('/')[-1] if '/' in x else (x if x.lower() not in ('nan', 'none', '') else "General")
+                df_valid['emp_area_clean'] = df_valid[col_area].astype(str).apply(
+                    lambda x: re.sub(r'\s+', ' ', str(x)).strip().split('/')[-1] if '/' in str(x) else (re.sub(r'\s+', ' ', str(x)).strip() if str(x).lower() not in ('nan', 'none', '') else "General")
                 )
             else:
                 df_valid['emp_area_clean'] = "General"

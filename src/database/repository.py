@@ -80,10 +80,24 @@ class DatabaseRepository:
             if row:
                 return row["id"], False
             
-            cursor.execute("""
-                INSERT INTO periodos (nombre, fecha_inicio, fecha_fin)
-                VALUES (?, ?, ?)
-            """, (nombre, fecha_inicio, fecha_fin))
+            # Verificar si la tabla periodos tiene la columna 'anio'
+            cols = [r[1] for r in cursor.execute("PRAGMA table_info(periodos)").fetchall()]
+            if 'anio' in cols:
+                try:
+                    dt = datetime.strptime(fecha_inicio, '%Y-%m-%d')
+                    anio_val, mes_val, q_val = dt.year, dt.month, (1 if dt.day <= 15 else 2)
+                except Exception:
+                    anio_val, mes_val, q_val = 2026, 6, 1
+                cursor.execute("""
+                    INSERT INTO periodos (nombre, anio, mes, quincena, fecha_inicio, fecha_fin)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (nombre, anio_val, mes_val, q_val, fecha_inicio, fecha_fin))
+            else:
+                cursor.execute("""
+                    INSERT INTO periodos (nombre, fecha_inicio, fecha_fin)
+                    VALUES (?, ?, ?)
+                """, (nombre, fecha_inicio, fecha_fin))
+
             conn.commit()
             return cursor.lastrowid, True
 
