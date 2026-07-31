@@ -48,6 +48,41 @@ class DatabaseRepository:
                     FOREIGN KEY (periodo_id) REFERENCES periodos(id)
                 )
             """)
+            # Tabla Festivos
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS festivos (
+                    fecha DATE PRIMARY KEY,
+                    descripcion TEXT NOT NULL,
+                    es_manual INTEGER DEFAULT 0
+                )
+            """)
+            conn.commit()
+
+    def get_festivos(self) -> List[Dict[str, Any]]:
+        """Obtiene la lista de festivos almacenados en la base de datos."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT fecha, descripcion, es_manual FROM festivos ORDER BY fecha ASC")
+            return [dict(r) for r in cursor.fetchall()]
+
+    def add_festivo(self, fecha: str, descripcion: str, es_manual: int = 1):
+        """Agrega o actualiza un festivo en SQLite."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO festivos (fecha, descripcion, es_manual)
+                VALUES (?, ?, ?)
+                ON CONFLICT(fecha) DO UPDATE SET
+                    descripcion=excluded.descripcion,
+                    es_manual=excluded.es_manual
+            """, (fecha, descripcion, es_manual))
+            conn.commit()
+
+    def delete_festivo(self, fecha: str):
+        """Elimina un festivo de SQLite."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM festivos WHERE fecha = ?", (fecha,))
             conn.commit()
 
     def upsert_empleados(self, empleados: List[Dict[str, str]]):
@@ -189,3 +224,83 @@ class DatabaseRepository:
             query += " ORDER BY m.fecha DESC, e.nombre ASC"
             cursor.execute(query, params)
             return [dict(row) for row in cursor.fetchall()]
+
+    def get_resumen_empleados(
+        self,
+        periodo_id: Optional[int] = None,
+        busqueda: str = "",
+        area: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Devuelve una fila por empleado con resumen: nombre, área, periodo, total días laborados.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            query = """
+                SELECT 
+                    m.empleado_id,
+                    e.nombre AS empleado_nombre,
+                    e.area AS empleado_area,
+                    p.nombre AS periodo_nombre,
+                    m.periodo_id,
+                    COUNT(DISTINCT m.fecha) AS total_dias,
+                    COUNT(m.id) AS total_marcaciones
+                FROM marcaciones_raw m
+                JOIN empleados e ON m.empleado_id = e.id
+                JOIN periodos p ON m.periodo_id = p.id
+                WHERE 1=1
+            """
+            params = []
+
+            if periodo_id:
+                query += " AND m.periodo_id = ?"
+                params.append(periodo_id)
+
+            if area and area != "Todas las áreas":
+                query += " AND e.area = ?"
+                params.append(area)
+
+            if busqueda and busqueda.strip():
+                term = f"%{busqueda.strip()}%"
+                query += " AND (e.nombre LIKE ? OR e.id LIKE ?)"
+                params.extend([term, term])
+
+            query += " GROUP BY m.empleado_id, m.periodo_id ORDER BY e.nombre ASC"
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_marcaciones_empleado(
+        self,
+        empleado_id: str,
+        periodo_id: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Devuelve todas las marcaciones diarias de un empleado específico, ordenadas por fecha.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            query = """
+                SELECT 
+                    m.id,
+                    m.empleado_id,
+                    e.nombre AS empleado_nombre,
+                    e.area AS empleado_area,
+                    m.fecha,
+                    m.hora_entrada,
+                    m.hora_salida,
+                    p.nombre AS periodo_nombre
+                FROM marcaciones_raw m
+                JOIN empleados e ON m.empleado_id = e.id
+                JOIN periodos p ON m.periodo_id = p.id
+                WHERE m.empleado_id = ?
+            """
+            params = [empleado_id]
+
+            if periodo_id:
+                query += " AND m.periodo_id = ?"
+                params.append(periodo_id)
+
+            query += " ORDER BY m.fecha ASC"
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
